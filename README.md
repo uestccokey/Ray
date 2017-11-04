@@ -3,6 +3,13 @@ Installation
 1. 'cd' to the directory which includes 'Makefile'
 2. Type 'make' to compile
 
+Build for Android
+------------
+
+```
+ndk-build NDK_PROJECT_PATH=. NDK_APPLICATION_MK=Application.mk APP_BUILD_SCRIPT=Android.mk  
+```
+
 How to run
 ----------
 By default settings, Ray will consume 10 seconds each move on a single CPU 
@@ -11,6 +18,12 @@ and require 800MB of memory.
     ./ray
 
 Ray has some options :
+
+Set the dir that contain the sim_params and uct_params on the SD card.
+
+```
+./ray --params-dir xxx 
+```
 
 Setting the total number of playouts per move (3000 PO/move). Default is 10000.
 
@@ -92,3 +105,5 @@ Please see the "COPYING" file.
 Contact
 -------
 rayauthor19x19@gmail.com (Yuki Kobayashi)
+
+
