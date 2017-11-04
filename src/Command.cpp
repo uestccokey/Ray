@@ -6,9 +6,12 @@
 #include "Command.h"
 #include "DynamicKomi.h"
 #include "GoBoard.h"
+
 #include "Message.h"
 #include "UctSearch.h"
 #include "ZobristHash.h"
+#include "Rating.h"
+#include "UctRating.h"
 
 using namespace std;
 
@@ -31,6 +34,7 @@ const string command[COMMAND_MAX] = {
   "--tree-size",
   "--no-debug",
   "--superko",
+  "--params-dir"
 };
 
 //  コマンドの説明
@@ -47,6 +51,7 @@ const string errmessage[COMMAND_MAX] = {
   "Set tree size (tree size must be 2 ^ n)",
   "Prohibit any debug message",
   "Prohibit superko move",
+  "Set the parameters directory"
 };
 
 
@@ -106,8 +111,8 @@ AnalyzeCommand( int argc, char **argv )
 	break;
       case COMMAND_REUSE_SUBTREE:
 	// 探索結果の再利用の設定
-        SetReuseSubtree(true);
-        break;
+    SetReuseSubtree(true);
+    break;
       case COMMAND_PONDERING :
 	// 予測読みの設定
 	SetReuseSubtree(true);
@@ -125,6 +130,35 @@ AnalyzeCommand( int argc, char **argv )
 	// デバッグメッセージを出力しない設定
 	SetDebugMessageMode(false);
 	break;
+      case COMMAND_PARAMS_DIR:
+        char program_path[1024];
+        int last;
+
+        strcpy(program_path, argv[++i]);
+        last = (int)strlen(program_path);
+        while (last--){
+      #if defined (_WIN32)
+          if (program_path[last] == '\\' || program_path[last] == '/') {
+            program_path[last] = '\0';
+            break;
+          }
+      #else
+          if (program_path[last] == '/') {
+            program_path[last] = '\0';
+            break;
+          }
+      #endif
+        }
+
+        // ŠeŽíƒpƒX‚ÌÝ’è
+      #if defined (_WIN32)
+        sprintf_s(uct_params_path, 1024, "%s\\uct_params", program_path);
+        sprintf_s(po_params_path, 1024, "%s\\sim_params", program_path);
+      #else
+        sprintf(uct_params_path, "%s/uct_params", program_path);
+        sprintf(po_params_path, "%s/sim_params", program_path);
+      #endif
+        break;
       default:
 	for (int j = 0; j < COMMAND_MAX; j++){
 	  fprintf(stderr, "%-22s : %s\n", command[j].c_str(), errmessage[j].c_str());

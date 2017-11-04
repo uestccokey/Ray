@@ -35,6 +35,7 @@ int board_y[BOARD_MAX];  // y方向の座標
 
 unsigned char eye[PAT3_MAX];        // 目のパターン
 unsigned char false_eye[PAT3_MAX];
+unsigned char falsy_eye[PAT3_MAX];
 unsigned char territory[PAT3_MAX];  // 領地のパターン
 unsigned char nb4_empty[PAT3_MAX];  // 上下左右の空点の数
 eye_condition_t eye_condition[PAT3_MAX];
@@ -307,13 +308,61 @@ InitializeBoard( game_info_t *game )
 }
 
 
+////////////////////////
+//  対局情報のクリア    //
+////////////////////////
+void
+ClearBoard( game_info_t *game )
+{
+  int i, x, y, pos;
+
+  memset(game, 0, sizeof(game_info_t));
+
+  game->current_hash = 0;
+  game->previous1_hash = 0;
+  game->previous2_hash = 0;
+
+  game->moves = 1;
+
+  game->pass_count = 0;
+
+  for (i = 0; i < BOARD_MAX; i++) { 
+    game->candidates[i] = false;
+  }
+
+
+  for (y = 0; y < board_size; y++){
+    for (x = 0; x < OB_SIZE; x++) {
+      game->board[POS(x, y)] = S_OB;
+      game->board[POS(y, x)] = S_OB;
+      game->board[POS(y, board_size - 1 - x)] = S_OB;
+      game->board[POS(board_size - 1 - x, y)] = S_OB;
+    }
+  }
+
+  for (y = board_start; y <= board_end; y++) {
+    for (x = board_start; x <= board_end; x++) {
+      pos = POS(x, y);
+      game->candidates[pos] = true;
+    }
+  }
+
+  memset(game->string, 0, sizeof(string_t) * MAX_STRING);
+  for (i = 0; i < MAX_STRING; i++) {
+    game->string[i].flag = false;
+  }
+
+  ClearPattern(game->pat);
+}
+
+
 //////////////
 //  コピー  //
 //////////////
 void
 CopyGame( game_info_t *dst, const game_info_t *src )
 {
-  memcpy(dst->record,             src->record,             sizeof(record_t) * MAX_RECORDS);
+  memcpy(dst->record,             src->record,             sizeof(record_t) * src->moves);
   memcpy(dst->prisoner,           src->prisoner,           sizeof(int) * S_MAX);
   memcpy(dst->board,              src->board,              sizeof(char) * board_max);  
   memcpy(dst->pat,                src->pat,                sizeof(pattern_t) * board_max); 
@@ -496,6 +545,16 @@ InitializeEye( void )
     // XOO     XOX     ###     ### 
     0x5965, 0x9955, 0xFD56, 0xFF76,
   };
+  const int falsy_eye_pat3[] = {
+    // XOO     XO+     XO+
+    // O*O     O*O     O*O
+    // OOX     OOX     +OX
+    0x9556, 0x9546, 0x9146,
+    // XOX     XOX     XOX
+    // O*O     O*O     O*O
+    // OOO     OO+     +O+
+    0x5566, 0x5166, 0x1166,
+  };
 
   const unsigned int complete_half_eye[12] = {
     // XOX     OOX     XOX     XOX     XOX
@@ -610,6 +669,14 @@ InitializeEye( void )
     for (int j = 0; j < 8; j++) {
       false_eye[transp[j]] = S_BLACK;
       false_eye[Pat3Reverse(transp[j])] = S_WHITE;
+    }
+  }
+
+  for (int p : falsy_eye_pat3) {
+    Pat3Transpose8(p, transp);
+    for (int j = 0; j < 8; j++) {
+      falsy_eye[transp[j]] = S_BLACK;
+      falsy_eye[Pat3Reverse(transp[j])] = S_WHITE;
     }
   }
 

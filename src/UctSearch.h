@@ -75,7 +75,7 @@ enum SEARCH_MODE {
 struct thread_arg_t {
   game_info_t *game; // 探索対象の局面
   int thread_id;   // スレッド識別番号
-  int color;       // 探索する手番
+  char color;       // 探索する手番
 };
 
 struct statistic_t {
@@ -174,7 +174,7 @@ void InitializeUctSearch( void );
 void InitializeSearchSetting( void );
 
 // UCT探索による着手生成
-int UctSearchGenmove( game_info_t *game, int color );
+int UctSearchGenmove( game_info_t *game, int color, int *check );
 
 // 予測よみ
 void UctSearchPondering( game_info_t *game, int color );

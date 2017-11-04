@@ -35,7 +35,8 @@ latent_factor_t uct_move_distance_2[MOVE_DISTANCE_MAX];
 // 3x3パターンのレート
 latent_factor_t uct_pat3[PAT3_LIMIT];
 // マンハッタン距離2のパターンのレート
-latent_factor_t uct_md2[MD2_LIMIT];
+// latent_factor_t uct_md2[MD2_LIMIT];
+latent_factor_t *uct_md2;
 // マンハッタン距離3のパターンのレート
 latent_factor_t uct_md3[LARGE_PAT_MAX];
 // マンハッタン距離4のパターンのレート
@@ -47,12 +48,16 @@ double uct_owner[OWNER_MAX];
 // クリティカリティのレート
 double uct_criticality[CRITICALITY_MAX];
 
-index_hash_t md3_index[HASH_MAX];
-index_hash_t md4_index[HASH_MAX];
-index_hash_t md5_index[HASH_MAX];
+// index_hash_t md3_index[HASH_MAX];
+// index_hash_t md4_index[HASH_MAX];
+// index_hash_t md5_index[HASH_MAX];
+index_hash_t *md3_index;
+index_hash_t *md4_index;
+index_hash_t *md5_index;
 
 int pat3_index[PAT3_MAX];
-int md2_index[MD2_MAX];
+// int md2_index[MD2_MAX];
+int *md2_index;
 
 game_info_t snapback_game;
 
@@ -1224,6 +1229,12 @@ InputUCTParameter(void)
 {
   string uct_parameters_path = uct_params_path;
   string path;
+
+  md2_index = new int[MD2_MAX];
+  md3_index = new index_hash_t[HASH_MAX];
+  md4_index = new index_hash_t[HASH_MAX];
+  md5_index = new index_hash_t[HASH_MAX];
+  uct_md2 = new latent_factor_t[MD2_LIMIT];
 
 #if defined (_WIN32)
   uct_parameters_path += '\\';

@@ -260,6 +260,7 @@ GTP_genmove( void )
   char pos[10];
   int color;
   int point = PASS;
+  int *check = nullptr;
   
   command = STRTOK(input_copy, DELIM, &next_token);
   
@@ -281,9 +282,27 @@ GTP_genmove( void )
     return;
   }
 
+  command = STRTOK(NULL, DELIM, &next_token);
+
+  if (command != NULL){
+    check = new int[10];
+    CHOMP(command);
+    int i = 0;
+    char *substr = STRTOK(command, ",", &next_token);
+    while (substr != NULL) {
+      if (i < 10) {
+        check[i] = atoi(substr);
+        i++;
+      } else {
+        break;
+      }
+      substr = STRTOK(NULL, ",", &next_token);
+    }
+  }
+
   player_color = color;
   
-  point = UctSearchGenmove(game, color);
+  point = UctSearchGenmove(game, color, check);
   if (point != RESIGN) {
     PutStone(game, point, color);
   }

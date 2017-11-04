@@ -15,7 +15,7 @@ const int BOARD_SIZE = (PURE_BOARD_SIZE + OB_SIZE + OB_SIZE); // 盤外を含め
 const int PURE_BOARD_MAX = (PURE_BOARD_SIZE * PURE_BOARD_SIZE); // 盤の大きさ 
 const int BOARD_MAX = (BOARD_SIZE * BOARD_SIZE);                // 盤外を含めた盤の大きさ
 
-const int MAX_STRING = (PURE_BOARD_MAX * 4 / 5); // 連の最大数 
+const int MAX_STRING = (PURE_BOARD_MAX / 2); // 連の最大数 
 const int MAX_NEIGHBOR = MAX_STRING;             // 隣接する敵連の最大数
 
 const int BOARD_START = OB_SIZE;                        // 盤の始点  
@@ -28,7 +28,7 @@ const int STRING_END = (STRING_POS_MAX - 1); // 連の終端を表す値
 const int NEIGHBOR_END = (MAX_NEIGHBOR - 1);  // 隣接する敵連の終端を表す値
 const int LIBERTY_END = (STRING_LIB_MAX - 1); // 呼吸点の終端を表す値
 
-const int MAX_RECORDS = (PURE_BOARD_MAX * 3); // 記録する着手の最大数 
+const int MAX_RECORDS = (PURE_BOARD_MAX * 2); // 記録する着手の最大数 
 const int MAX_MOVES = (MAX_RECORDS - 1);      // 着手数の最大値
 
 const int PASS = 0;     // パスに相当する値
@@ -50,6 +50,11 @@ const double KOMI = 6.5; // デフォルトのコミの値
 #define  WEST(pos) ((pos) - 1)           // posの左の座標
 #define  EAST(pos) ((pos) + 1)           // posの右の座標
 #define SOUTH(pos) ((pos) + board_size)  // posの下の座標
+
+#define NORTH_WEST(pos) ((pos) - board_size - 1)
+#define NORTH_EAST(pos) ((pos) - board_size + 1)
+#define SOUTH_WEST(pos) ((pos) + board_size - 1)
+#define SOUTH_EAST(pos) ((pos) + board_size + 1)
 
 #define FLIP_COLOR(col) ((col) ^ 0x3) // 色の反転
 
@@ -78,7 +83,7 @@ enum eye_condition_t : unsigned char {
 
 // 着手を記録する構造体
 struct record_t {
-  int color;                // 着手した石の色
+  char color;                // 着手した石の色
   int pos;                  // 着手箇所の座標
   unsigned long long hash;  // 局面のハッシュ値
 };
@@ -86,9 +91,9 @@ struct record_t {
 // 連を表す構造体 (19x19 : 1987bytes)
 struct string_t {
   char color;                    // 連の色
-  int libs;                      // 連の持つ呼吸点数
+  short libs;                      // 連の持つ呼吸点数
   short lib[STRING_LIB_MAX];     // 連の持つ呼吸点の座標
-  int neighbors;                 // 隣接する敵の連の数
+  short neighbors;                 // 隣接する敵の連の数
   short neighbor[MAX_NEIGHBOR];  // 隣接する敵の連の連番号
   int origin;                    // 連の始点の座標
   int size;                      // 連を構成する石の数
@@ -230,6 +235,9 @@ void InitializeConst( void );
 // 盤面の初期化
 void InitializeBoard( game_info_t *game );
 
+// 盤面のクリア
+void ClearBoard( game_info_t *game );
+
 // 合法手判定
 // 合法手ならばtrueを返す
 bool IsLegal( const game_info_t *game, const int pos, const int color );
@@ -257,4 +265,11 @@ void SetKomi( const double new_komi );
 // 上下左右の座標の計算
 void GetNeighbor4( int neighbor4[4], const int pos );
 
+inline bool IsNeighbor( int pos0, int pos1 ) {
+  int index_distance = pos0 - pos1;
+  return index_distance == 1
+    || index_distance == -1
+    || index_distance == board_size
+    || index_distance == -board_size;
+}
 #endif

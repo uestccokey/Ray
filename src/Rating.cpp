@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <functional>
 #include <string>
+#include <numeric>
+#include <set>
 
 #include "Message.h"
 #include "Nakade.h"
@@ -26,10 +28,14 @@ using namespace std;
 float po_tactical_features[TACTICAL_FEATURE_MAX];
 // 3x3パターンのγ値
 float po_pat3[PAT3_MAX];
+// // MD2のパターンのγ値
+// float po_md2[MD2_MAX];
+// // 3x3とMD2のパターンのγ値の積
+// float po_pattern[MD2_MAX];
 // MD2のパターンのγ値
-float po_md2[MD2_MAX];
+float *po_md2;
 // 3x3とMD2のパターンのγ値の積
-float po_pattern[MD2_MAX];
+float *po_pattern;
 // 学習した着手距離の特徴 
 float po_neighbor_orig[PREVIOUS_DISTANCE_MAX];
 // 補正した着手距離の特徴
@@ -66,6 +72,9 @@ double neighbor_bias = NEIGHBOR_BIAS;
 double jump_bias = JUMP_BIAS;
 double po_bias = PO_BIAS;
 
+// 隅のセキ
+static set<unsigned int> seki_22_set[2];
+
 //////////////////
 //  関数の宣言  //
 //////////////////
@@ -80,7 +89,7 @@ static void PoCheckFeaturesLib2( game_info_t *game, const int color, const int i
 static void PoCheckFeaturesLib3( game_info_t *game, const int color, const int id, int *update, int *update_num );
 
 //  特徴の判定
-static void PoCheckFeatures( game_info_t *game, const int color, int *update, int *update_num );
+static void PoCheckFeatures( game_info_t *game, const int color, int previous_move, int *update, int *update_num );
 
 //  劫を解消するトリの判定
 static void PoCheckCaptureAfterKo( game_info_t *game, const int color, int *update, int *update_num );
@@ -135,6 +144,16 @@ InitializeRating( void )
   InputPOGamma();
   // 戦術的特徴をまとめる
   InitializePoTacticalFeaturesSet();
+  // seki in corner
+  {
+    unsigned int seki_22_md2[] = { 3938730, 8133034, 12327338, 4004266, 8198570, 12392874, 4069802, 8264106, 12458410 };
+    for (unsigned int md2 : seki_22_md2) {
+      unsigned int transp[16];
+      MD2Transpose16(md2, transp);
+      for (int i = 0; i < 16; i++)
+        seki_22_set[i / 8].insert(transp[i]);
+    }
+  }
 }
 
 
@@ -566,7 +585,7 @@ PartialRating( game_info_t *game, int color, long long *sum_rate, long long *sum
 
   if (pm1 != PASS) {
     Neighbor12(pm1, distance_2, distance_3, distance_4);
-    PoCheckFeatures(game, color, update_pos, update_num);
+    PoCheckFeatures(game, color, pm1, update_pos, update_num);
     PoCheckRemove2Stones(game, color, update_pos, update_num);
 
     SearchNakade(game, &nakade_num, nakade_pos);
@@ -584,6 +603,13 @@ PartialRating( game_info_t *game, int color, long long *sum_rate, long long *sum
   if (pm2 != PASS) Neighbor12Update(game, color, sum_rate, sum_rate_row, rate, 1, &pm2, flag);
   // 3手前の着手の12近傍の更新
   if (pm3 != PASS) Neighbor12Update(game, color, sum_rate, sum_rate_row, rate, 1, &pm3, flag);
+
+  // 3, 5, 7
+  for (int i = 0; i < 3; i++) {
+    int n = (i + 1) * 2 + 1;
+    if (game->moves > n)
+      PoCheckFeatures(game, color, game->record[game->moves - n].pos, update_pos, update_num);
+  }
 
   // 以前の着手で戦術的特徴が現れた箇所の更新
   OtherUpdate(game, color, sum_rate, sum_rate_row, rate, prev_feature, prev_feature_pos, flag);
@@ -615,9 +641,26 @@ Rating( game_info_t *game, int color, long long *sum_rate, long long *sum_rate_r
 
   pm1 = game->record[game->moves - 1].pos;
 
-  PoCheckFeatures(game, color, update_pos, &update_num);
+  PoCheckFeatures(game, color, pm1, update_pos, &update_num);
   if (game->ko_move == game->moves - 2) {
     PoCheckCaptureAfterKo(game, color, update_pos, &update_num);
+  }
+
+  // Update semeai features
+  for (i = 0; i < pure_board_max; i++) {
+    pos = onboard_pos[i];
+
+    if (game->board[pos] == color) {
+      int id = game->string_id[pos];
+      update_num = 0;
+      if (game->string[id].libs == 1) {
+        PoCheckFeaturesLib1(game, color, id, update_pos, &update_num);
+      } else if (game->string[id].libs == 2) {
+        PoCheckFeaturesLib2(game, color, id, update_pos, &update_num);
+      } else if (game->string[id].libs == 3) {
+        PoCheckFeaturesLib3(game, color, id, update_pos, &update_num);
+      }
+    }
   }
 
   for (i = 0; i < pure_board_max; i++) {
@@ -995,18 +1038,14 @@ PoCheckFeaturesLib3( game_info_t *game, const int color, const int id, int *upda
 //  特徴の判定  //
 //////////////////
 static void
-PoCheckFeatures( game_info_t *game, const int color, int *update, int *update_num )
+PoCheckFeatures( game_info_t *game, const int color, int previous_move, int *update, int *update_num )
 {
   string_t *string = game->string;
   char *board = game->board;
   int *string_id = game->string_id;
-  int previous_move = game->record[game->moves - 1].pos;
   int id;
   int check[3] = { 0 };
   int checked = 0;
-
-  if (game->moves > 1) previous_move = game->record[game->moves - 1].pos;
-  else return;
 
   if (previous_move == PASS) return;
 
@@ -1127,6 +1166,62 @@ PoCheckCaptureAfterKo( game_info_t *game, const int color, int *update, int *upd
       game->tactical_features1[lib] |= po_tactical_features_mask[F_CAPTURE_AFTER_KO];
     }
   }
+}
+
+bool
+PoCheckSnapBack( game_info_t *game, int color, int pos, int pos0 )
+{
+  const char *board = game->board;
+  const string_t *string = game->string;
+  const int *string_id = game->string_id;
+  int other = FLIP_COLOR(color);
+
+  if (board[pos0] != other)
+    return false;
+
+  int id = string_id[pos0];
+  if (string[id].libs == 2) {
+    int lib0 = string[id].lib[0];
+    int lib1 = string[id].lib[lib0];
+    if (IsNeighbor(lib0, lib1)) {
+      int lib = (lib0 == pos) ? lib1 : lib0;
+      int neighbor4[4];
+      GetNeighbor4(neighbor4, lib);
+      bool safe = false;
+      for (int p : neighbor4) {
+	if (p == pos)
+	  continue;
+	if (board[p] == S_EMPTY
+	  || (board[p] == other && string_id[p] != id)) {
+	  safe = true;
+	  break;
+	}
+	if (board[p] == color
+	  && string[string_id[p]].libs == 1) {
+	  safe = true;
+	  break;
+	}
+      }
+      if (!safe) {
+#if 0
+	PrintBoard(game);
+	cerr << "SNAPBACK? " << color << " " << FormatMove(pos) << " " << FormatMove(lib) << endl;
+	for (int f2 = 0; f2 < F_MAX2; f2++) {
+	if (game->tactical_features2[pos] & po_tactical_features_mask[f2])
+	cerr << po_features_name[F_MAX1 + f2];
+	}
+	cerr << endl;
+#endif
+	if (string[id].size <= 2) {
+	  game->tactical_features2[pos] |= po_tactical_features_mask[F_2POINT_C_ATARI_SMALL];
+	} else {
+	  game->tactical_features2[pos] |= po_tactical_features_mask[F_2POINT_C_ATARI_LARGE];
+	}
+	return true;
+      }
+    }
+  }
+  return false;
 }
 
 
@@ -1290,10 +1385,46 @@ PoCheckSelfAtari( game_info_t *game, const int color, const int pos )
     return true;
   }
 
+  if (size == 2) {
+    // ooo#
+    // o+@#
+    // o@+#
+    // ####
+    int pos22x = -1;
+    int pos22y = -1;
+    int x = X(pos);
+    int y = Y(pos);
+    if (x == board_start || x == board_start + 1)
+      pos22x = board_start + 1;
+    else if (x == board_end - 1 || x == board_end)
+      pos22x = board_end - 1;
+    if (y == board_start || y == board_start + 1)
+      pos22y = board_start + 1;
+    else if (y == board_end - 1 || y == board_end)
+      pos22y = board_end - 1;
+    if (pos22x > 0 && pos22y > 0) {
+      int pos22 = POS(pos22x, pos22y);
+      int md2 = MD2(game->pat, pos22);
+      if (seki_22_set[color - 1].count(md2) > 0) {
+        return false;
+      }
+    }
+  }
+
   // 自己アタリになる連の大きさが2以下,
   // または大きさが5以下でナカデの形になる場合は
   // 打っても良いものとする
-  if (size < 2) {
+  if (size == 0) {
+    // Check snap back
+    bool snapback =
+      PoCheckSnapBack(game, color, pos, NORTH(pos))
+      || PoCheckSnapBack(game, color, pos, SOUTH(pos))
+      || PoCheckSnapBack(game, color, pos, WEST(pos))
+      || PoCheckSnapBack(game, color, pos, EAST(pos));
+    if (!snapback)
+      game->tactical_features2[pos] |= po_tactical_features_mask[F_SELF_ATARI_SMALL];
+    flag = true;
+  } else if (size < 2) {
     game->tactical_features2[pos] |= po_tactical_features_mask[F_SELF_ATARI_SMALL];
     flag = true;
   } else if (size < 5) {
@@ -1432,6 +1563,9 @@ InputPOGamma( void )
   string po_parameters_path = po_params_path;
   string path;
 
+  po_md2 = new float[MD2_MAX];
+  po_pattern = new float[MD2_MAX];
+
 #if defined (_WIN32)
   po_parameters_path += '\\';
 #else
@@ -1462,7 +1596,17 @@ InputPOGamma( void )
 
   // 3x3とMD2のパターンをまとめる
   for (i = 0; i < MD2_MAX; i++){
-    po_pattern[i] = (float)(po_md2[i] * po_pat3[i & 0xFFFF] * 100.0);
+    float r = po_md2[i] * po_pat3[i & 0xFFFF];
+
+    // 実際に目を潰す手は判定で打たれないので確率を落とさない
+    if (eye_condition[i & 0xFFFF] == E_COMPLETE_ONE_EYE
+      || eye_condition[i & 0xFFFF] == E_HALF_1_EYE) {
+      if (r < 1.0f) {
+        r = 1.0f;
+      }
+    }
+
+    po_pattern[i] = r * 100.0f;
   }
 }
 
@@ -1519,7 +1663,7 @@ AnalyzePoRating( game_info_t *game, int color, double rate[] )
   
   pm1 = game->record[moves - 1].pos;
   
-  PoCheckFeatures(game, color, update_pos, &update_num);
+  PoCheckFeatures(game, color, pm1, update_pos, &update_num);
   PoCheckRemove2Stones(game, color, update_pos, &update_num);
   if (game->ko_move == moves - 2) {
     PoCheckCaptureAfterKo(game, color, update_pos, &update_num);

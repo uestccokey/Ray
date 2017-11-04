@@ -156,7 +156,7 @@ static void CorrectDescendentNodes( vector<int> &indexes, int index );
 static int ExpandNode( game_info_t *game, int color, int current );
 
 // ルートの展開
-static int ExpandRoot( game_info_t *game, int color );
+static int ExpandRoot( game_info_t *game, int color, int* check );
 
 // 思考時間を延長する処理
 static bool ExtendTime( void );
@@ -421,7 +421,7 @@ StopPondering( void )
 //  UCTアルゴリズムによる着手生成  //
 /////////////////////////////////////
 int
-UctSearchGenmove( game_info_t *game, int color )
+UctSearchGenmove( game_info_t *game, int color, int *check )
 {
   int pos, select_index, max_count, pre_simulated;
   double finish_time, pass_wp, best_wp;
@@ -452,7 +452,7 @@ UctSearchGenmove( game_info_t *game, int color )
   begin_time = ray_clock::now();
   
   // UCTの初期化
-  current_root = ExpandRoot(game, color);
+  current_root = ExpandRoot(game, color, check);
 
   // 前回から持ち込んだ探索回数を記録
   pre_simulated = uct_node[current_root].move_count;
@@ -551,7 +551,11 @@ UctSearchGenmove( game_info_t *game, int color )
   } else if (best_wp <= RESIGN_THRESHOLD) {
     pos = RESIGN;
   } else {
-    pos = uct_child[select_index].pos;
+    if (select_index == PASS_INDEX && check != nullptr) {
+	  pos = check[0];
+	} else {
+	  pos = uct_child[select_index].pos;
+	}  
   }
 
   // 最善応手列を出力
@@ -594,7 +598,7 @@ UctSearchPondering( game_info_t *game, int color )
   }
 
   // UCTの初期化
-  current_root = ExpandRoot(game, color);
+  current_root = ExpandRoot(game, color, nullptr);
 
   pondered = false;
 
@@ -642,7 +646,7 @@ InitializeCandidate( child_node_t *uct_child, int pos, bool ladder )
 //  ルートノードの展開  //
 /////////////////////////
 static int
-ExpandRoot( game_info_t *game, int color )
+ExpandRoot( game_info_t *game, int color, int *check )
 {
   unsigned long long hash = game->move_hash;
   unsigned int index = FindSameHashIndex(hash, color, game->moves);
@@ -685,10 +689,10 @@ ExpandRoot( game_info_t *game, int color )
       uct_child[i].flag = false;
       uct_child[i].open = false;
       if (ladder[pos]) {
-	uct_node[index].move_count -= uct_child[i].move_count;
-	uct_node[index].win -= uct_child[i].win;
-	uct_child[i].move_count = 0;
-	uct_child[i].win = 0;
+      	uct_node[index].move_count -= uct_child[i].move_count;
+      	uct_node[index].win -= uct_child[i].win;
+      	uct_child[i].move_count = 0;
+      	uct_child[i].win = 0;
       }
       uct_child[i].ladder = ladder[pos];
     }
@@ -730,21 +734,45 @@ ExpandRoot( game_info_t *game, int color )
     // 候補手の展開
     if (game->moves == 1) {
       for (i = 0; i < first_move_candidates; i++) {
-	pos = first_move_candidate[i];
-	// 探索候補かつ合法手であれば探索対象にする
-	if (candidates[pos] && IsLegal(game, pos, color)) {
-	  InitializeCandidate(&uct_child[child_num], pos, ladder[pos]);
-	  child_num++;
-	}	
+      	pos = first_move_candidate[i];
+
+        bool contain = true;
+        if (check != nullptr) {
+          contain = false;
+          for (int j = 0; j < 10; j++) {
+            if(check[j] == pos){
+              contain = true;
+              break;
+            }
+          }
+        }
+
+      	// 探索候補かつ合法手であれば探索対象にする
+      	if (contain && candidates[pos] && IsLegal(game, pos, color)) {
+      	  InitializeCandidate(&uct_child[child_num], pos, ladder[pos]);
+      	  child_num++;
+      	}
       }
     } else {
       for (i = 0; i < pure_board_max; i++) {
-	pos = onboard_pos[i];
-	// 探索候補かつ合法手であれば探索対象にする
-	if (candidates[pos] && IsLegal(game, pos, color)) {
-	  InitializeCandidate(&uct_child[child_num], pos, ladder[pos]);
-	  child_num++;
-	}
+	    pos = onboard_pos[i];
+
+        bool contain = true;
+        if (check != nullptr) {
+          contain = false;
+          for (int j = 0; j < 10; j++) {
+            if(check[j] == pos){
+              contain = true;
+              break;
+            }
+          }
+        }
+
+    	// 探索候補かつ合法手であれば探索対象にする
+    	if (contain && candidates[pos] && IsLegal(game, pos, color)) {
+    	  InitializeCandidate(&uct_child[child_num], pos, ladder[pos]);
+    	  child_num++;
+    	}
       }
     }
     
@@ -775,6 +803,7 @@ ExpandNode( game_info_t *game, int color, int current )
   unsigned int index = FindSameHashIndex(hash, color, game->moves);
   child_node_t *uct_child, *uct_sibling;
   int i, pos, child_num = 0;
+  bool ladder[BOARD_MAX] = { false };  
   double max_rate = 0.0;
   int max_pos = PASS, sibling_num;
   int pm1 = PASS, pm2 = PASS;
@@ -795,6 +824,11 @@ ExpandNode( game_info_t *game, int color, int current )
   // 2手前の着手の座標を取り出す
   if (moves > 1) pm2 = game->record[moves - 2].pos;
 
+  // 9路盤でなければシチョウを調べる  
+  if (pure_board_size != 9) {
+    LadderExtension(game, color, ladder);
+  }
+
   // 現在のノードの初期化
   uct_node[index].previous_move1 = pm1;
   uct_node[index].previous_move2 = pm2;
@@ -807,7 +841,7 @@ ExpandNode( game_info_t *game, int color, int current )
   uct_child = uct_node[index].child;
 
   // パスノードの展開
-  InitializeCandidate(&uct_child[PASS_INDEX], PASS, false);
+  InitializeCandidate(&uct_child[PASS_INDEX], PASS, ladder[PASS]);
   child_num++;
 
   // 候補手の展開
@@ -815,7 +849,7 @@ ExpandNode( game_info_t *game, int color, int current )
     pos = onboard_pos[i];
     // 探索候補でなければ除外
     if (candidates[pos] && IsLegal(game, pos, color)) {
-      InitializeCandidate(&uct_child[child_num], pos, false);
+      InitializeCandidate(&uct_child[child_num], pos, ladder[pos]);
       child_num++;
     }
   }
@@ -1159,7 +1193,10 @@ UctSearch( game_info_t *game, int color, mt19937_64 *mt, int current, int *winne
   // 色を入れ替える
   color = FLIP_COLOR(color);
 
-  if (uct_child[next_index].move_count < expand_threshold) {
+  bool end_of_game = game->moves > 2 &&
+    game->record[game->moves - 1].pos == PASS &&
+    game->record[game->moves - 2].pos == PASS;
+  if (uct_child[next_index].move_count < expand_threshold || end_of_game) {
     // Virtual Lossを加算
     AddVirtualLoss(&uct_child[next_index], current);
 
@@ -1566,7 +1603,7 @@ UctAnalyze( game_info_t *game, int color )
 
   ClearUctHash();
 
-  current_root = ExpandRoot(game, color);
+  current_root = ExpandRoot(game, color, nullptr);
 
   for (int i = 0; i < pure_board_max; i++) {
     pos = onboard_pos[i];
@@ -1667,7 +1704,7 @@ UctSearchGenmoveCleanUp( game_info_t *game, int color )
 
   po_info.count = 0;
 
-  current_root = ExpandRoot(game, color);
+  current_root = ExpandRoot(game, color, nullptr);
 
   if (uct_node[current_root].child_num <= 1) {
     pos = PASS;

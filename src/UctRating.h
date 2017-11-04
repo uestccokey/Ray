@@ -208,9 +208,12 @@ struct latent_factor_t {
 extern double uct_owner[OWNER_MAX];
 extern double uct_criticality[CRITICALITY_MAX];
 
-extern index_hash_t md3_index[HASH_MAX];
-extern index_hash_t md4_index[HASH_MAX];
-extern index_hash_t md5_index[HASH_MAX];
+// extern index_hash_t md3_index[HASH_MAX];
+// extern index_hash_t md4_index[HASH_MAX];
+// extern index_hash_t md5_index[HASH_MAX];
+extern index_hash_t *md3_index;
+extern index_hash_t *md4_index;
+extern index_hash_t *md5_index;
 
 extern char uct_params_path[1024];
 
